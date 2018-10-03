@@ -3,13 +3,16 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"strconv"
+	"flag"
+	//"strconv"
 	"log"
 	"runtime"
+	"time"
 	"net/http"
 	"math/rand"
 
-	"github.com/adjust/redismq"	
+	//"github.com/andreagrandi/go-amqp-example/contracts"
+	"github.com/streadway/amqp"	
 	"github.com/gomodule/redigo/redis"
 	"github.com/gorilla/mux"
 )
@@ -30,20 +33,60 @@ type Person struct {
 	Age       int    `json:"age,omitempty"`
 }
 
+var per = Person{
+		ID: "2",
+		Firstname: "Ashish",
+		Lastname:  "Tiwari",
+		Age: 24,
+	}	
 // var people []Person
+
+var (
+	amqpURI = flag.String("amqp", "amqp://guest:guest@localhost:5672/", "AMQP URI")
+)
+
+func failOnError(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%s: %s", msg, err)
+		panic(fmt.Sprintf("%s: %s", msg, err))
+	}
+}
+
+func init() {
+	flag.Parse()
+	initAmqp()
+}
+
+var Conn *amqp.Connection
+var ch *amqp.Channel
+
+func initAmqp() {
+	var err error
+
+	Conn, err = amqp.Dial(*amqpURI)
+	failOnError(err, "Failed to connect to RabbitMQ")
+
+	ch, err = Conn.Channel()
+	failOnError(err, "Failed to open a channel")
+
+	err = ch.ExchangeDeclare(
+		"test-exchange", // name
+		"direct",        // type
+		true,            // durable
+		false,           // auto-deleted
+		false,           // internal
+		false,           // noWait
+		nil,             // arguments
+	)
+	failOnError(err, "Failed to declare the Exchange")
+}
+
 
 //CreatePersonEndpoint for entering Person Info
 func CreatePersonEndpoint(w http.ResponseWriter, req *http.Request) {
-	//params := mux.Vars(req)
-	//var person Person
-	//_ = json.NewDecoder(req.Body).Decode(&person)
-	//person.ID = params["id"]
-	//people = append(people, person)
-	//json.NewEncoder(w).Encode(people)
-	//const objectPrefix string = "person:"
+		fmt.Println("Data added to Redis")
 	}
 	
-
 func main() {
 
 	defer conn.Close()
@@ -69,15 +112,24 @@ func main() {
 	
 	runtime.GOMAXPROCS(5)
 	//server := redismq.NewServer("localhost", "6379", "", 9, "9999")
-	server.Start()
+	//server.Start()
 	//queue := redismq.CreateQueue("localhost", "6379", "", 9, "example")
 
 	//defining router
 	router := mux.NewRouter()
 	//people = append(people, Person{ID: "1", Firstname: "Ashish", Lastname: "Tiwari", Age: 24})
-	//people = append(people, Person{ID: "2", Firstname: "Ayush", Lastname: "Goyal", Age: 24})
 	//defining Endpoints
 	router.HandleFunc("/person", CreatePersonEndpoint).Methods("POST")
+	log.Println("Starting publisher...")
+
+	// Publish messages
+	publishMessages(10000)
+
+	// Close Channel
+	defer ch.Close()
+
+	// Close Connection
+	defer Conn.Close()
 
 	//defining port
 	log.Fatal(http.ListenAndServe(":3000", router))
@@ -121,13 +173,6 @@ func setStruct(c redis.Conn) error {
 
 	const objectPrefix string = "person:"
 	//keyval := rand.Intn(100)
-
-	per := Person{
-		ID: "2",
-		Firstname: "Ashish",
-		Lastname:  "Tiwari",
-		Age: 24,
-	}
 	
 	fmt.Println("In Redis SET")
 
@@ -143,16 +188,33 @@ func setStruct(c redis.Conn) error {
 		return err
 		}
 		//convert random string to key to put in the queue
-		go write(queue)
+		//go write(queue)
 		return nil
 }
 
-func write(queue *redismq.Queue) {
-	t := strconv.Itoa(keyval)
-	fmt.Println(t)
-	for {
-		queue.Put(t)
+func publishMessages(messages int) {
+	for i := 0; i < messages; i++ {
+		//t := strconv.Itoa(keyval)
+		
+		payload, err := json.Marshal(per)
+		failOnError(err, "Failed to marshal JSON")
+		
+		//fmt.Println(t)
+		err = ch.Publish(
+			"go-test-exchange", // exchange
+			"go-test-key",      // routing key
+			false,              // mandatory
+			false,              // immediate
+			amqp.Publishing{
+				DeliveryMode: amqp.Transient,
+				ContentType:  "application/json",
+				Body:         payload,
+				Timestamp:    time.Now(),
+			})
+
+		failOnError(err, "Failed to Publish on RabbitMQ")
 	}
-}
+}	
+
 
 
