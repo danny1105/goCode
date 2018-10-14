@@ -1,5 +1,5 @@
 {
-  "name": "node_service",
+  "name": "nodeassign",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
@@ -9,12 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "body-parser": "^1.18.3",
-    "config": "^2.0.1",
-    "express": "^4.16.3",
+    "amqplib": "^0.5.2",
+    "express": "^4.16.4",
     "mysql": "^2.16.0",
-    "redis": "^2.8.0",
-    "step": "^1.0.0"
-	"amqplib": "^0.3.2"
+    "redis": "^2.8.0"
   }
 }
