@@ -8,14 +8,19 @@ import (
 	"log"
 	"strconv"
 	//"io"
+	"math/rand"
 	"io/ioutil"
 	
 	"github.com/garyburd/redigo/redis"
 	"github.com/gorilla/mux"
 	"github.com/streadway/amqp"
+	"github.com/bdwilliams/go-jsonify/jsonify"
+	_ "github.com/go-sql-driver/mysql"
+    "database/sql"
 )
 
-var currentPersonId int
+//database instance
+var appdatabase *sql.DB
 
 func RedisConnect() redis.Conn {
 	c, err := redis.Dial("tcp", ":6379")
@@ -25,15 +30,24 @@ func RedisConnect() redis.Conn {
 
 //main	
 func main() {
+	var err error
 	fmt.Println("Hello Ashish")
 	flag.Parse()
+	
+	appdatabase, err = sql.Open("mysql", "root:ashish@/gocode")
+       HandleError(err)
+       err = appdatabase.Ping()
+       if err != nil {
+              fmt.Println(err.Error())
+       }
 	
 	router := mux.NewRouter()
 	router.HandleFunc("/", Index).Methods("GET")
 	router.HandleFunc("/post", CreatePost).Methods("POST")
-	
+	router.HandleFunc("/get", GetData).Methods("GET")
 
 	//defining port
+	defer appdatabase.Close()
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
 
@@ -107,17 +121,20 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 //CeatePerson
 func CreatePerson(p Person) {
 	
-	currentPersonId += 1
+	//currentPersonId += 1
 	
-	p.Id = currentPersonId
+	//p.Id = currentPersonId
 	
 	c := RedisConnect()
 	defer c.Close()
 	
 	b, err := json.Marshal(p)
 	HandleError(err)
+	
+	keyval := rand.Intn(100)
+	
 	// Save JSON blob to Redis
-	reply, err := c.Do("SET", "post:" + strconv.Itoa(p.Id), b)
+	reply, err := c.Do("SET", "person:" + strconv.Itoa(keyval), b)
 	HandleError(err)
 	fmt.Println("GET ", reply)
 	
@@ -152,9 +169,21 @@ func CreatePerson(p Person) {
 			false, // immediate
 			amqp.Publishing{
 			ContentType: "text/plain",
-			Body: []byte(strconv.Itoa(p.Id)),
+			Body: []byte("person:"+strconv.Itoa(keyval)),
 		})
 
 		//log.Printf(" [x] Sent %s", body)
 		HandleError(err)
+}
+
+func GetData(w http.ResponseWriter, r *http.Request) {
+
+      rows, err := appdatabase.Query("SELECT * FROM goinfo")
+	  if err!= nil {
+	  panic(err.Error())
+	  }
+	  
+	  defer rows.Close()
+	  
+	  json.NewEncoder(w).Encode(jsonify.Jsonify(rows))
 }
